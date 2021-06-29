@@ -1,5 +1,6 @@
 import re
 import time
+import tempfile
 
 from google.cloud import storage
 from google.cloud import vision
@@ -15,8 +16,10 @@ def p2a_gcs_trigger(file, context):
     print("Started `p2a_gcs_trigger` function")
 
     file_name = file["name"]  # use in prod
+    print("file name: {}".format(file_name))
     # file_name = "MY_SAMPLE_FILE_NAME" # use locally to test
     if not file_name.lower().endswith(".pdf"):
+        print("Finished `p2a_gcs_trigger` function because file is not pdf")
         return
     bucket = None
     file_blob = None
@@ -28,15 +31,16 @@ def p2a_gcs_trigger(file, context):
 
     # PDF to TEXT
     text_list_from_pdf = None
-    if file_name.lower().endswith(".pdf"):
-        text_list_from_pdf = p2a_pdf_to_text(bucket, file_blob)
+    # if file_name.lower().endswith(".pdf"):
+    text_list_from_pdf = p2a_pdf_to_text(bucket, file_blob)
 
     # Convert TEXT to SPEECH
-    while text_list_from_pdf == None:
-        text_list_from_pdf = p2a_pdf_to_text(bucket, file_blob)
-        time.sleep(1)
-
+    # while text_list_from_pdf == None:
+    #     text_list_from_pdf = p2a_pdf_to_text(bucket, file_blob)
+    #     time.sleep(1)
+    print("before text to speech")
     p2a_text_to_speech(bucket, file_name, text_list_from_pdf)
+    print("after text to speech")
 
     print("Finished `p2a_gcs_trigger` function")
 
@@ -110,7 +114,9 @@ def p2a_text_to_speech(bucket, file_name, text_list_from_pdf):
     print("Started `p2a_text_to_speech` function")
     # Setup
     speech_file_name = file_name.replace('.pdf', '.mp3')
+    temp_dir = tempfile.gettempdir()
     temp_speech_file_name = 'temp_output.mp3'
+    temp_speech_file_path = '{}/{}'.format(temp_dir, temp_speech_file_name)
 
     # Convert list of text(strings) to one text(string)
     print('Started converting the list to one string')
@@ -118,38 +124,38 @@ def p2a_text_to_speech(bucket, file_name, text_list_from_pdf):
     print('Finished converting the list to one string')
 
     # Set the text input to be synthesized
-    synthesis_input = texttospeech.SynthesisInput(text=text)
+    synthesis_input = texttospeech.types.SynthesisInput(text=text)
 
     # Build the voice request
-    voice = texttospeech.VoiceSelectionParams(
-        language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
+    voice = texttospeech.types.VoiceSelectionParams(
+        language_code="en-US"
     )
 
     # Select the type of audio file you want returned
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.MP3
+    audio_config = texttospeech.types.AudioConfig(
+        audio_encoding=texttospeech.enums.AudioEncoding.MP3
     )
 
     # Perform the text-to-speech request
     print('Started converting the string to speech')
     response = speech_client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
+        synthesis_input, voice, audio_config
     )
     print('Finished converting the string to speech')
 
     # Saving `.mp3` file to google storage bucket
     print('Started saving binary to .mp3 file')
     # The response's audio_content is binary.
-    with open(temp_speech_file_name, "wb") as out:
+    with open(temp_speech_file_path, "wb") as out:
         # Write the response to the output file.
         out.write(response.audio_content)
-        print(u'Audio content written to file "{}"'.format(temp_speech_file_name))
+        print(u'Audio content written to file "{}"'.format(temp_speech_file_path))
     print('Finished saving binary to .mp3 file')
 
     # Upload `.mp3` file to google storage bucket
     print('Started uploading .mp3 file to goog storage bucket')
     speech_blob = bucket.blob(speech_file_name)
-    with open(temp_speech_file_name, "rb") as speech_file:
+    with open(temp_speech_file_path, "rb") as speech_file:
         speech_blob.upload_from_file(speech_file)
     print('Finished uploading .mp3 file to goog storage bucket')
 
